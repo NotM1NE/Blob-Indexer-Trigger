@@ -1,10 +1,8 @@
-using System.Net.Http.Headers;
 using Azure.Messaging.EventGrid;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Azure.Storage.Queues;
-using System.Net;
 using BlobCreatedIndexerRunner.Models;
 using System.Text.Json;
 
@@ -68,9 +66,5 @@ public class BlobCreatedTrigger
         {
             _logger.LogError("Blob trigger failed: {ex}", ex);
         }
-
-
-
     }
-
 }
