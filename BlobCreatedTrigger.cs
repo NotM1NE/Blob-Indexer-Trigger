@@ -22,35 +22,55 @@ public class BlobCreatedTrigger
         var storageConnectionString = config["AzureWebJobsStorage"];
         var queueName = config["INDEXER_TRIGGER_QUEUE"] ?? "indexer-trigger-queue";
 
-        _queueClient = new QueueClient(storageConnectionString, queueName);
+        if (string.IsNullOrWhiteSpace(storageConnectionString))
+            throw new InvalidOperationException("AzureWebJobsStorage is empty");
 
+        if (string.IsNullOrWhiteSpace(queueName))
+            throw new InvalidOperationException("INDEXER_TRIGGER_QUEUE is empty");
+
+        _queueClient = new QueueClient(storageConnectionString, queueName,
+        new QueueClientOptions
+        {
+            MessageEncoding = QueueMessageEncoding.Base64
+        });
     }
 
     [Function(nameof(BlobCreatedTrigger))]
     public async Task Run([EventGridTrigger] EventGridEvent eventGridEvent)
     {
-        _logger.LogInformation("Function was triggered");
-        _logger.LogInformation("BlobCreated event recieved. Event type: {type}, Event subject: {subject}", eventGridEvent.EventType, eventGridEvent.Subject);
-
-        if (!string.Equals(eventGridEvent.EventType, "Microsoft.Storage.BlobCreated", StringComparison.OrdinalIgnoreCase))
+        try
         {
-            _logger.LogWarning("Skipping unsupported event type: {type}", eventGridEvent.EventType);
-            return;
+            _logger.LogInformation("Function was triggered");
+            await _queueClient.CreateIfNotExistsAsync();
+            _logger.LogInformation("BlobCreated event recieved. Event type: {type}, Event subject: {subject}", eventGridEvent.EventType, eventGridEvent.Subject);
+
+            if (!string.Equals(eventGridEvent.EventType, "Microsoft.Storage.BlobCreated", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("Skipping unsupported event type: {type}", eventGridEvent.EventType);
+                return;
+            }
+
+            var message = new BlobCreatedMessage
+            (
+                eventGridEvent.Id,
+                eventGridEvent.Subject,
+                eventGridEvent.EventType,
+                eventGridEvent.EventTime.UtcDateTime
+            );
+
+            var json = JsonSerializer.Serialize(message);
+
+            await _queueClient.SendMessageAsync(Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(json)));
+
+            _logger.LogInformation("BlobCreated event queued. Event type: {type}, Event subject: {subject}", eventGridEvent.EventType, eventGridEvent.Subject);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Blob trigger failed: {ex}", ex);
         }
 
-        var message = new BlobCreatedMessage
-        (
-            eventGridEvent.Id,
-            eventGridEvent.Subject,
-            eventGridEvent.EventType,
-            eventGridEvent.EventTime.UtcDateTime
-        );
 
-        var json = JsonSerializer.Serialize(message);
 
-        await _queueClient.SendMessageAsync(Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(json)));
-
-        _logger.LogInformation("BlobCreated event queued. Event type: {type}, Event subject: {subject}", eventGridEvent.EventType, eventGridEvent.Subject);
     }
 
 }
